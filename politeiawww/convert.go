@@ -23,6 +23,7 @@ func convertCastVoteReplyFromDecredPlugin(cvr decredplugin.CastVoteReply) www.Ca
 		ClientSignature: cvr.ClientSignature,
 		Signature:       cvr.Signature,
 		Error:           cvr.Error,
+		ErrorStatus:     cvr.ErrorStatus,
 	}
 }
 
@@ -565,7 +566,9 @@ func convertDatabaseInvoiceToInvoiceRecord(dbInvoice cmsdatabase.Invoice) *cms.I
 		}
 		invInputLineItems = append(invInputLineItems, lineItem)
 	}
+	invInput.LineItems = invInputLineItems
 	invRec.Input = invInput
+	invRec.Input.LineItems = invInputLineItems
 	return invRec
 }
 
@@ -796,6 +799,7 @@ func convertInvoiceFromCache(r cache.Record) cms.InvoiceRecord {
 }
 
 func convertDCCFromCache(r cache.Record) cms.DCCRecord {
+	dcc := cms.DCCRecord{}
 	// Decode metadata streams
 	var md backendDCCMetadata
 	var c backendDCCStatusChange
@@ -825,6 +829,26 @@ func convertDCCFromCache(r cache.Record) cms.DCCRecord {
 			for _, s := range m {
 				c = s
 			}
+		case mdStreamDCCSupportOpposition:
+			// Support and Opposition
+			so, err := decodeBackendDCCSupportOppositionMetadata([]byte(v.Payload))
+			if err != nil {
+				log.Errorf("convertDCCFromCache: decode md stream: "+
+					"token:%v error:%v payload:%v",
+					r.CensorshipRecord.Token, err, v)
+			}
+			supportPubkeys := make([]string, 0, len(so))
+			opposePubkeys := make([]string, 0, len(so))
+			// Tabulate all support and opposition
+			for _, s := range so {
+				if s.Vote == supportString {
+					supportPubkeys = append(supportPubkeys, s.PublicKey)
+				} else if s.Vote == opposeString {
+					opposePubkeys = append(opposePubkeys, s.PublicKey)
+				}
+			}
+			dcc.SupportUserIDs = supportPubkeys
+			dcc.OppositionUserIDs = opposePubkeys
 		}
 	}
 
@@ -861,24 +885,22 @@ func convertDCCFromCache(r cache.Record) cms.DCCRecord {
 		}
 	}
 
-	// UserID and Username are left intentionally blank.
-	// These fields not part of a cache record.
-	return cms.DCCRecord{
-		Status:             c.NewStatus,
-		StatusChangeReason: c.Reason,
-		Timestamp:          r.Timestamp,
-		SponsorUserID:      "",
-		SponsorUsername:    "",
-		PublicKey:          md.PublicKey,
-		Signature:          md.Signature,
-		File:               f,
-		CensorshipRecord: www.CensorshipRecord{
-			Token:     r.CensorshipRecord.Token,
-			Merkle:    r.CensorshipRecord.Merkle,
-			Signature: r.CensorshipRecord.Signature,
-		},
-		DCC: di,
+	dcc.Status = c.NewStatus
+	dcc.StatusChangeReason = c.Reason
+	dcc.Timestamp = r.Timestamp
+	dcc.SponsorUserID = ""
+	dcc.SponsorUsername = ""
+	dcc.PublicKey = md.PublicKey
+	dcc.Signature = md.Signature
+	dcc.File = f
+	dcc.CensorshipRecord = www.CensorshipRecord{
+		Token:     r.CensorshipRecord.Token,
+		Merkle:    r.CensorshipRecord.Merkle,
+		Signature: r.CensorshipRecord.Signature,
 	}
+	dcc.DCC = di
+
+	return dcc
 }
 
 func convertRecordToDatabaseDCC(p pd.Record) (*cmsdatabase.DCC, error) {
@@ -906,6 +928,7 @@ func convertRecordToDatabaseDCC(p pd.Record) (*cmsdatabase.DCC, error) {
 			dbDCC.NomineeUserID = dcc.NomineeUserID
 			dbDCC.SponsorStatement = dcc.SponsorStatement
 			dbDCC.Domain = dcc.Domain
+			dbDCC.ContractorType = dcc.ContractorType
 		}
 	}
 
@@ -954,6 +977,7 @@ func convertDCCDatabaseToRecord(dbDCC *cmsdatabase.DCC) cms.DCCRecord {
 	dccRecord.DCC.NomineeUserID = dbDCC.NomineeUserID
 	dccRecord.DCC.SponsorStatement = dbDCC.SponsorStatement
 	dccRecord.DCC.Domain = dbDCC.Domain
+	dccRecord.DCC.ContractorType = dbDCC.ContractorType
 	dccRecord.Status = dbDCC.Status
 	dccRecord.StatusChangeReason = dbDCC.StatusChangeReason
 	dccRecord.Timestamp = dbDCC.Timestamp

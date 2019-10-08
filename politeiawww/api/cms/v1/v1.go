@@ -27,10 +27,14 @@ const (
 	RouteNewDCC              = "/dcc/new"
 	RouteDCCDetails          = "/dcc/{token:[A-z0-9]{64}}"
 	RouteGetDCCs             = "/dcc"
+	RouteSupportOpposeDCC    = "/dcc/supportoppose"
+	RouteNewCommentDCC       = "/dcc/newcomment"
+	RouteDCCComments         = "/dcc/{token:[A-z0-9]{64}}/comments"
+	RouteSetDCCStatus        = "/dcc/{token:[A-z0-9]{64}}/status"
 	RouteAdminInvoices       = "/admin/invoices"
 	RouteAdminUserInvoices   = "/admin/userinvoices"
 	RouteGeneratePayouts     = "/admin/generatepayouts"
-	RouteLineItemPayouts     = "/admin/lineitempayouts"
+	RouteInvoicePayouts      = "/admin/invoicepayouts"
 	RoutePayInvoices         = "/admin/payinvoices"
 	RouteInvoiceComments     = "/invoices/{token:[A-z0-9]{64}}/comments"
 	RouteInvoiceExchangeRate = "/invoices/exchangerate"
@@ -66,6 +70,7 @@ const (
 	ContractorTypeSupervisor    ContractorTypeT = 2 // Supervisor contractor
 	ContractorTypeSubContractor ContractorTypeT = 3 // SubContractor
 	ContractorTypeNominee       ContractorTypeT = 4 // Nominated DCC user
+	ContractorTypeRevoked       ContractorTypeT = 5 // Revoked CMS User
 
 	// Payment information status types
 	PaymentStatusInvalid  PaymentStatusT = 0 // Invalid status
@@ -78,14 +83,16 @@ const (
 	DCCTypeRevocation DCCTypeT = 2 // Revocation DCC type
 
 	// DCC status types
-	DCCStatusInvalid DCCStatusT = 0 // Invalid issuance/revocation status
-	DCCStatusActive  DCCStatusT = 1 // Currently active issuance/revocation (awaiting sponsors)
+	DCCStatusInvalid  DCCStatusT = 0 // Invalid issuance/revocation status
+	DCCStatusActive   DCCStatusT = 1 // Currently active issuance/revocation (awaiting sponsors)
+	DCCStatusApproved DCCStatusT = 2 // Fully approved DCC proposal
+	DCCStatusRejected DCCStatusT = 3 // Rejected DCC proposal
 
 	InvoiceInputVersion = 1
 
 	// PolicyMaxImages is the maximum number of images accepted
 	// when creating a new invoice
-	PolicyMaxImages = 5
+	PolicyMaxImages = 20
 
 	// PolicyMaxImageSize is the maximum image file size (in bytes)
 	// accepted when creating a new invoice
@@ -184,6 +191,12 @@ const (
 	ErrorStatusInvalidUserNewInvoice          www.ErrorStatusT = 1038
 	ErrorStatusInvalidDCCNominee              www.ErrorStatusT = 1039
 	ErrorStatusDCCNotFound                    www.ErrorStatusT = 1040
+	ErrorStatusWrongDCCStatus                 www.ErrorStatusT = 1041
+	ErrorStatusInvalidSupportOppose           www.ErrorStatusT = 1042
+	ErrorStatusDuplicateSupportOppose         www.ErrorStatusT = 1043
+	ErrorStatusUserIsAuthor                   www.ErrorStatusT = 1044
+	ErrorStatusInvalidUserDCC                 www.ErrorStatusT = 1045
+	ErrorStatusInvalidDCCContractorType       www.ErrorStatusT = 1046
 )
 
 var (
@@ -254,6 +267,12 @@ var (
 		ErrorStatusInvalidUserNewInvoice:          "current contractor status does not allow new invoices to be created",
 		ErrorStatusInvalidDCCNominee:              "invalid nominee user was submitted for a DCC",
 		ErrorStatusDCCNotFound:                    "a requested dcc was not found",
+		ErrorStatusWrongDCCStatus:                 "cannot comment/approve/oppose DCC if it's not active state",
+		ErrorStatusInvalidSupportOppose:           "invalid support or opposition vote was included in the request, must be aye or nay",
+		ErrorStatusDuplicateSupportOppose:         "user has already supported or opposed the given DCC",
+		ErrorStatusUserIsAuthor:                   "user cannot support or oppose their own sponsored DCC",
+		ErrorStatusInvalidUserDCC:                 "user is not authorized to complete the DCC request",
+		ErrorStatusInvalidDCCContractorType:       "DCC must have a valid contractor type",
 	}
 )
 
@@ -481,17 +500,17 @@ type PayInvoices struct{}
 // PayInvoicesReply will be empty if no errors have occurred.
 type PayInvoicesReply struct{}
 
-// LineItemPayouts contains the request to receive line items from payouts
+// InvoicePayouts contains the request to receive invoices that have been paid
 // within a start and end date.
-type LineItemPayouts struct {
+type InvoicePayouts struct {
 	StartTime int64 `json:"starttime"` // Start time for range (in unix seconds)
-	EndTime   int64 `json:"endtime"`   // End time for rang (in unix seconds)
+	EndTime   int64 `json:"endtime"`   // End time for range (in unix seconds)
 }
 
-// LineItemPayoutsReply returns an array of line items within the requested
+// InvoicePayoutsReply returns an array of invoices within the requested
 // date range.
-type LineItemPayoutsReply struct {
-	LineItems []LineItemsInput `json:"lineitems"` // Line items within the requested date range.
+type InvoicePayoutsReply struct {
+	Invoices []InvoiceRecord `json:"invoices"` // Invoices within the requested date range.
 }
 
 // PaymentInformation contains information for each invoice's payout. A payout
@@ -548,31 +567,41 @@ type UserDetailsReply struct {
 	User User `json:"user"`
 }
 
-// EditUser edits a user's preferences.
+// EditUser edits a user's CMS information.
 type EditUser struct {
-	Domain             DomainTypeT     `json:"domain,omitempty"` // Contractor domain
-	GitHubName         string          `json:"githubname,omitempty"`
-	MatrixName         string          `json:"matrixname,omitempty"`
-	ContractorType     ContractorTypeT `json:"contractortype,omitempty"`
-	ContractorName     string          `json:"contractorname,omitempty"`
-	ContractorLocation string          `json:"contractorlocation,omitempty"`
-	ContractorContact  string          `json:"contractorcontact,omitempty"`
-	SupervisorUserID   string          `json:"supervisoruserid,omitempty"`
+	GitHubName         string `json:"githubname,omitempty"`
+	MatrixName         string `json:"matrixname,omitempty"`
+	ContractorName     string `json:"contractorname,omitempty"`
+	ContractorLocation string `json:"contractorlocation,omitempty"`
+	ContractorContact  string `json:"contractorcontact,omitempty"`
 }
 
 // EditUserReply is the reply for the EditUser command.
 type EditUserReply struct{}
 
+// ManageUser performs the given action on a user.
+type ManageUser struct {
+	UserID           string          `json:"userid"`
+	Domain           DomainTypeT     `json:"domain,omitempty"`
+	ContractorType   ContractorTypeT `json:"contractortype,omitempty"`
+	SupervisorUserID string          `json:"supervisoruserid,omitempty"`
+}
+
+// ManageUserReply is the reply for the ManageUserReply command.
+type ManageUserReply struct{}
+
 // DCCInput contains all of the information concerning a DCC object that
 // will be submitted as a Record to the politeiad backend.
 type DCCInput struct {
-	Type             DCCTypeT    `json:"type"`          // Type of DCC object
-	NomineeUserID    string      `json:"nomineeuserid"` // UserID of the DCC nominee (issuance or revocation)
-	SponsorStatement string      `json:"statement"`     // Statement from sponsoring user about why DCC should be approved
-	Domain           DomainTypeT `json:"domain"`        // Domain of proposed contractor issuance
+	Type             DCCTypeT        `json:"type"`           // Type of DCC object
+	NomineeUserID    string          `json:"nomineeuserid"`  // UserID of the DCC nominee (issuance or revocation)
+	SponsorStatement string          `json:"statement"`      // Statement from sponsoring user about why DCC should be approved
+	Domain           DomainTypeT     `json:"domain"`         // Domain of proposed contractor issuance
+	ContractorType   ContractorTypeT `json:"contractortype"` // The Contractor Type of the nominee for when they are approved
 }
 
-// DCCRecord is what will be decoded from a Record for a DCC object to the politeiad backend.
+// DCCRecord is what will be decoded from a Record for a DCC object to the
+// politeiad backend.
 type DCCRecord struct {
 	Status             DCCStatusT `json:"status"`             // Current status of the DCC
 	StatusChangeReason string     `json:"statuschangereason"` // The reason for changing the DCC status.
@@ -598,7 +627,8 @@ type NewDCC struct {
 	Signature string   `json:"signature"` // Signature of the issuance struct by the sponsoring user.
 }
 
-// NewDCCReply returns the censorship record when the DCC is successfully submitted to the backend.
+// NewDCCReply returns the censorship record when the DCC is successfully
+// submitted to the backend.
 type NewDCCReply struct {
 	CensorshipRecord www.CensorshipRecord `json:"censorshiprecord"`
 }
@@ -622,3 +652,27 @@ type GetDCCs struct {
 type GetDCCsReply struct {
 	DCCs []DCCRecord `json:"dccs"` // DCCRecords of matching status
 }
+
+// SupportOpposeDCC request allows a user to support a given DCC issuance or
+// revocation.
+type SupportOpposeDCC struct {
+	Vote      string `json:"comment"`   // Vote must be "aye" or "nay"
+	Token     string `json:"token"`     // The censorship token of the given DCC issuance or revocation.
+	PublicKey string `json:"publickey"` // Pubkey of the submitting user
+	Signature string `json:"signature"` // Signature of the Token+Vote by the submitting user.
+}
+
+// SupportOpposeDCCReply returns an empty response when successful.
+type SupportOpposeDCCReply struct{}
+
+// SetDCCStatus is an admin request that updates the status of a DCC
+type SetDCCStatus struct {
+	Token     string     `json:"token"`     // Token of the DCC iss/rev
+	Reason    string     `json:"reason"`    // Reason for approval
+	Status    DCCStatusT `json:"status"`    // New status
+	Signature string     `json:"signature"` // Client Signature of Token+Status+Reason
+	PublicKey string     `json:"publickey"` // Pubkey used for Signature
+}
+
+// SetDCCStatusReply returns an empty response when successful.
+type SetDCCStatusReply struct{}

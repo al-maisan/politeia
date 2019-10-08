@@ -71,6 +71,7 @@ var (
 	// The valid contractor
 	invalidNewInvoiceContractorType = map[cms.ContractorTypeT]bool{
 		cms.ContractorTypeNominee: true,
+		cms.ContractorTypeInvalid: true,
 	}
 
 	validInvoiceField = regexp.MustCompile(createInvoiceFieldRegex())
@@ -272,7 +273,7 @@ func (p *politeiawww) processNewInvoice(ni cms.NewInvoice, u *user.User) (*cms.N
 	}
 
 	// Ensure that the user is not unauthorized to create invoices
-	if _, ok := invalidNewInvoiceContractorType[cmsUser.ContractorType]; !ok {
+	if _, ok := invalidNewInvoiceContractorType[cmsUser.ContractorType]; ok {
 		return nil, www.UserError{
 			ErrorCode: cms.ErrorStatusInvalidUserNewInvoice,
 		}
@@ -731,7 +732,7 @@ func (p *politeiawww) validateInvoice(ni cms.NewInvoice, u *user.User) error {
 		}
 	}
 
-	if numImages > www.PolicyMaxImages {
+	if numImages > cms.PolicyMaxImages {
 		return www.UserError{
 			ErrorCode: www.ErrorStatusMaxImagesExceededPolicy,
 		}
@@ -944,7 +945,7 @@ func validateStatusTransition(
 ) error {
 	validStatuses, ok := validStatusTransitions[oldStatus]
 	if !ok {
-		log.Errorf("status not supported: %v", oldStatus)
+		log.Debugf("status not supported: %v", oldStatus)
 		return www.UserError{
 			ErrorCode: cms.ErrorStatusInvalidInvoiceStatusTransition,
 		}
@@ -1470,7 +1471,6 @@ func (p *politeiawww) processPayInvoices(u *user.User) (*cms.PayInvoicesReply, e
 
 	reply := &cms.PayInvoicesReply{}
 	for _, inv := range dbInvs {
-
 		// Create the change record.
 		c := backendInvoiceStatusChange{
 			Version:        backendInvoiceStatusChangeVersion,
@@ -1612,9 +1612,9 @@ func decodeBackendInvoiceStatusChanges(payload []byte) ([]backendInvoiceStatusCh
 	return md, nil
 }
 
-// processLineItemPayouts looks for all line items within the given start and end dates.
-func (p *politeiawww) processLineItemPayouts(lip cms.LineItemPayouts) (*cms.LineItemPayoutsReply, error) {
-	reply := &cms.LineItemPayoutsReply{}
+// processInvoicePayouts looks for all paid invoices within the given start and end dates.
+func (p *politeiawww) processInvoicePayouts(lip cms.InvoicePayouts) (*cms.InvoicePayoutsReply, error) {
+	reply := &cms.InvoicePayoutsReply{}
 
 	// check for valid dates
 	if lip.StartTime > lip.EndTime {
@@ -1622,12 +1622,17 @@ func (p *politeiawww) processLineItemPayouts(lip cms.LineItemPayouts) (*cms.Line
 			ErrorCode: cms.ErrorStatusInvalidDatesRequested,
 		}
 	}
-	dbLineItems, err := p.cmsDB.LineItemsByDateRange(lip.StartTime, lip.EndTime, int(cms.InvoiceStatusPaid))
+	dbInvs, err := p.cmsDB.InvoicesByDateRangeStatus(lip.StartTime, lip.EndTime,
+		int(cms.InvoiceStatusPaid))
 	if err != nil {
 		return nil, err
 	}
-	lineItems := convertDatabaseToLineItems(dbLineItems)
-	reply.LineItems = lineItems
+	invoices := make([]cms.InvoiceRecord, 0, len(dbInvs))
+	for _, inv := range dbInvs {
+		invRec := convertDatabaseInvoiceToInvoiceRecord(*inv)
+		invoices = append(invoices, *invRec)
+	}
+	reply.Invoices = invoices
 	return reply, nil
 }
 

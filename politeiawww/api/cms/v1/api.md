@@ -15,6 +15,7 @@ server side notifications.  It does not render HTML.
 - [`Admin invoices`](#admin-invoices)
 - [`Edit invoice`](#edit-invoice)
 - [`Set invoice status`](#set-invoice-status)
+- [`Set DCC status`](#set-dcc-status)
 - [`Generate payouts`](#generate-payouts)
 - [`Invoice comments`](#invoice-comments)
 - [`Invoice exchange rate`](#invoice-exchange-rate)
@@ -641,21 +642,21 @@ Reply:
 {}
 ```
 
-### `Line Item Payouts`
+### `Invoice Payouts`
 
-This command would provide a list of line items that were paid out in a given
+This command would provide a list of invoices that were paid out in a given
 date range.  
 
 Note: This call requires admin privileges.
 
-**Route:** `GET /v1/admin/lineitempayouts`
+**Route:** `GET /v1/admin/invoicepayouts`
 
 **Params:**
 
 | Parameter | Type | Description | Required |
 |-|-|-|-|
-| starttime | int64 | Start time for the line item range (in Unix seconds) | Yes |
-| endtime | int64 | End time for the line item range (in Unix seconds) | Yes |
+| starttime | int64 | Start time for the invoice range (in Unix seconds) | Yes |
+| endtime | int64 | End time for the invoice range (in Unix seconds) | Yes |
 
 **Results:**
 
@@ -677,8 +678,24 @@ Reply:
 
 ```json
 {
-  "lineitems": [
-    {  
+  "invoices": [
+  {
+    "status": 4,
+    "month": 12,
+    "year": 2018,
+    "timestamp": 1508296860781,
+    "userid": "0",
+    "username": "foobar",
+    "publickey":"5203ab0bb739f3fc267ad20c945b81bcb68ff22414510c000305f4f0afb90d1b",
+    "signature": "gdd92f26c8g38c90d2887259e88df614654g32fde76bef1438b0efg40e360f461e995d796g16b17108gbe226793ge4g52gg013428feb3c39de504fe5g1811e0e",
+    "version": "1",
+    "censorshiprecord": {
+      "token": "337fc4762dac6bbe11d3d0130f33a09978004b190e6ebbbde9312ac63f223527",
+      "merkle": "0dd10219cd79342198085cbe6f737bd54efe119b24c84cbc053023ed6b7da4c8",
+      "signature": "fcc92e26b8f38b90c2887259d88ce614654f32ecd76ade1438a0def40d360e461d995c796f16a17108fad226793fd4f52ff013428eda3b39cd504ed5f1811d0d"
+    },
+    "lineitems": [
+      {  
       "type": 1,
       "domain": "Design",
       "subdomain": "dcrweb",
@@ -686,16 +703,9 @@ Reply:
       "proposaltoken": "",
       "labor": 7380,
       "expenses": 0
-    },
-    {
-      "type": 2,
-      "domain": "Design",
-      "subdomain": "dcrweb",
-      "description": "Buying stickers.  Lots of stickers.",
-      "proposaltoken": "",
-      "labor": 0,
-      "expenses": 5000
-    }
+      }
+    ]
+  }
   ]
 }
 ```
@@ -710,13 +720,50 @@ Allows a user to submit updates to their cms user information.
 
 | Parameter | Type | Description | Required |
 |-|-|-|-|
-| domain | int | The Domain Type that the user currently has | no |
 | githubname | string | The Github Name tied to the user. | no |
 | matrixname | string | The Matrix Name tied to the user. | no |
-| contractortype | int | The contractor type of the user. | no |
 | contractorname | string | The contractors IRL name/identity. | no |
 | contractorlocation | string | Current general locaiton of the contractor. | no |
 | contractorcontact | string | Email or contact information of the contractor. | no |
+
+**Results:**
+
+| | Type | Description |
+|-|-|-|
+
+**Example**
+
+Request:
+
+```json
+{
+  "githubname": "smobs",
+  "matrixname": "smobs:decred.org",
+  "contractorname": "Steve Mobs",
+  "contractorlocation": "Cupertino, CA",
+  "contractorcontact": "smobs@apple.com",
+}
+```
+
+Reply:
+
+```json
+{}
+```
+
+### `Manage CMS user`
+
+Edits a user's details. This call requires admin privileges.
+
+**Route:** `POST /v1/user/manage`
+
+**Params:**
+
+| Parameter | Type | Description | Required |
+|-|-|-|-|
+| userid | string | UserID string of the user to be edited. | yes |
+| domain | int | The Domain Type that the user currently has | no |
+| contractortype | int | The contractor type of the user. | no |
 | supervisoruserid | string | The userid of the user (if the user is a sub contractor. ) | no |
 
 **Results:**
@@ -731,12 +778,7 @@ Request:
 ```json
 {
   "domain": 1,
-  "githubname": "smobs",
-  "matrixname": "smobs:decred.org",
   "contractortype": 1,
-  "contractorname": "Steve Mobs",
-  "contractorlocation": "Cupertino, CA",
-  "contractorcontact": "smobs@apple.com",
   "supervisoruserid": "",
 }
 ```
@@ -875,7 +917,7 @@ Reply:
 
 ### `DCC Details`
 
-Retrieve DCC by its token.
+Retrieve DCC and its details.
 
 **Routes:** `GET /v1/dcc/{token}`
 
@@ -891,10 +933,6 @@ Retrieve DCC by its token.
 |-|-|-|
 | dcc | [`DCC`](#dcc) | The DCC with the provided token. |
 
-On failure the call shall return `400 Bad Request` and one of the following
-error codes:
-- [`ErrorStatusProposalNotFound`](#ErrorStatusProposalNotFound)
-
 **Example**
 
 Request:
@@ -908,11 +946,7 @@ The request params should be provided within the URL:
 Reply:
 
 ```json
-
-Reply:
-
-```json
-{  
+{
     "dcc": {
       "status": 4,
       "statuschangereason": "This has been revoked due to strong support.",
@@ -944,8 +978,24 @@ Reply:
         "token": "edd0882152f9800e7a6240f23d7310bd45145eb85ec463458de828b631083d84",
         "merkle": "cd5176184a510776abf1c394d830427f94d2f7fe4622e27ac839ceefa7fcf277",
         "signature": "4ea9f76a6c6659d4936aa556182604a3099778a981ebf500d5d47424b7ba0127ab033202b0be7872d09473088c04e9d1145f801455f0ae07be29e2f2d99ac00f"
-      }
+      },
+    "publickey": "311fa61d27b18c0033589ef1fb49edd162d791d0702cbab623ffd4486452322a",
+    "signature": "8a3c5b5cb984cfb7fd59a11d2d7d11a8d50b936358541d917ba348d30bfb1d805c26686836695a9b4b347feee6a674b689b448ed941280874a4b8dbdf360600b",
+    "version": "1",
+    "statement": "",
+    "domain": 0,
+    "sponsoruserid": "b35ab9d3-a98d-4170-ad5a-85b5bce9fb10",
+    "sponsorusername": "bsaget",
+    "supportuserids": [],
+    "againstuserids": [
+      "a5c98ca0-7369-4147-8902-3d268ec2fb24"
+    ],
+    "censorshiprecord": {
+      "token": "edd0882152f9800e7a6240f23d7310bd45145eb85ec463458de828b631083d84",
+      "merkle": "cd5176184a510776abf1c394d830427f94d2f7fe4622e27ac839ceefa7fcf277",
+      "signature": "4ea9f76a6c6659d4936aa556182604a3099778a981ebf500d5d47424b7ba0127ab033202b0be7872d09473088c04e9d1145f801455f0ae07be29e2f2d99ac00f"
     }
+  }
 }
 ```
 
@@ -1021,6 +1071,251 @@ Reply:
 }
 ```
 
+### `Support/Oppose DCC`
+
+Creates a vote on a DCC Record that is used to tabulate support or opposition .
+
+**Route:** `POST /v1/dcc/supportoppose`
+
+**Params:**
+
+| Parameter | Type | Description | Required |
+|-|-|-|-|
+| vote | string | The vote for the given DCC | Yes |
+| token | string | The token of the DCC to support | Yes |
+
+**Results:**
+
+| | Type | Description |
+|-|-|-|
+
+**Example**
+
+Request:
+
+```json
+{
+  "vote": "aye",
+  "token":"5203ab0bb739f3fc267ad20c945b81bcb68ff22414510c000305f4f0afb90d1b"
+}
+```
+
+Reply:
+
+```json
+{}
+```
+
+### `New DCC comment`
+
+Submit comment on given DCC.  ParentID value "0" means "comment on
+proposal"; if the value is not empty it means "reply to comment".
+
+**Route:** `POST /v1/dcc/newcomment`
+
+**Params:**
+
+| Parameter | Type | Description | Required |
+| - | - | - | - |
+| token | string | Censorship token | Yes |
+| parentid | string | Parent comment identifier | Yes |
+| comment | string | Comment | Yes |
+| signature | string | Signature of Token, ParentID and Comment | Yes |
+| publickey | string | Public key from the client side, sent to politeiawww for verification | Yes |
+
+**Results:**
+
+| | Type | Description |
+| - | - | - |
+| token | string | Censorship token |
+| parentid | string | Parent comment identifier |
+| comment | string | Comment text |
+| signature | string | Signature of Token, ParentID and Comment |
+| publickey | string | Public key from the client side, sent to politeiawww for verification |
+| commentid | string | Unique comment identifier |
+| receipt | string | Server signature of the client Signature |
+| timestamp | int64 | UNIX time when comment was accepted |
+| resultvotes | int64 | Vote score |
+| censored | bool | Has the comment been censored |
+| userid | string | Unique user identifier |
+| username | string | Unique username |
+
+On failure the call shall return `400 Bad Request` and one of the following
+error codes:
+
+- [`ErrorStatusInvalidSigningKey`](#ErrorStatusInvalidSigningKey)
+- [`ErrorStatusInvalidSignature`](#ErrorStatusInvalidSignature)
+- [`ErrorStatusCommentLengthExceededPolicy`](#ErrorStatusCommentLengthExceededPolicy)
+- [`ErrorStatusInvalidCensorshipToken`](#ErrorStatusInvalidCensorshipToken)
+- [`ErrorStatusDCCNotFound`](#ErrorStatusDCCNotFound)
+- [`ErrorStatusCannotSupportOpposeCommentOnNonActiveDCC`](#ErrorStatusCannotSupportOpposeCommentOnNonActiveDCC)
+- [`ErrorStatusDuplicateComment`](#ErrorStatusDuplicateComment)
+
+**Example**
+
+Request:
+
+```json
+{
+  "token":"abf0fd1fc1b8c1c9535685373dce6c54948b7eb018e17e3a8cea26a3c9b85684",
+  "parentid":"0",
+  "comment":"I dont like this dcc",
+  "signature":"af969d7f0f711e25cb411bdbbe3268bbf3004075cde8ebaee0fc9d988f24e45013cc2df6762dca5b3eb8abb077f76e0b016380a7eba2d46839b04c507d86290d",
+  "publickey":"4206fa1f45c898f1dee487d7a7a82e0ed293858313b8b022a6a88f2bcae6cdd7"
+}
+```
+
+Reply:
+
+```json
+{
+  "token": "abf0fd1fc1b8c1c9535685373dce6c54948b7eb018e17e3a8cea26a3c9b85684",
+  "parentid": "0",
+  "comment": "I dont like this dcc",
+  "signature":"af969d7f0f711e25cb411bdbbe3268bbf3004075cde8ebaee0fc9d988f24e45013cc2df6762dca5b3eb8abb077f76e0b016380a7eba2d46839b04c507d86290d",
+  "publickey": "4206fa1f45c898f1dee487d7a7a82e0ed293858313b8b022a6a88f2bcae6cdd7",
+  "commentid": "4",
+  "receipt": "96f3956ea3decb75ee129e6ee4e77c6c608f0b5c99ff41960a4e6078d8bb74e8ad9d2545c01fff2f8b7e0af38ee9de406aea8a0b897777d619e93d797bc1650a",
+  "timestamp": 1527277504,
+  "resultvotes": 0,
+  "censored": false,
+  "userid": "124",
+  "username": "john",
+}
+```
+
+### `DCC comments`
+
+Retrieve all comments for given DCC.  Note that the comments are not
+sorted.
+
+**Route:** `GET /v1/dcc/{token}/comments`
+
+**Params:**
+
+**Results:**
+
+| | Type | Description |
+| - | - | - |
+| Comments | Comment | Unsorted array of all comments |
+| AccessTime | int64 | UNIX timestamp of last access time. Omitted if no session cookie is present. |
+
+**Comment:**
+
+| | Type | Description |
+| - | - | - |
+| userid | string | Unique user identifier |
+| username | string | Unique username |
+| timestamp | int64 | UNIX time when comment was accepted |
+| commentid | string | Unique comment identifier |
+| parentid | string | Parent comment identifier |
+| token | string | Censorship token |
+| comment | string | Comment text |
+| publickey | string | Public key from the client side, sent to politeiawww for verification |
+| signature | string | Signature of Token, ParentID and Comment |
+| receipt | string | Server signature of the client Signature |
+| resultvotes | int64 | Vote score |
+
+**Example**
+
+Request:
+
+The request params should be provided within the URL:
+
+```
+/v1/dcc/f1c2042d36c8603517cf24768b6475e18745943e4c6a20bc0001f52a2a6f9bde/comments
+```
+
+Reply:
+
+```json
+{
+  "comments": [{
+    "comment": "I dont like this dcc",
+    "commentid": "4",
+    "parentid": "0",
+    "publickey": "4206fa1f45c898f1dee487d7a7a82e0ed293858313b8b022a6a88f2bcae6cdd7",
+    "receipt": "96f3956ea3decb75ee129e6ee4e77c6c608f0b5c99ff41960a4e6078d8bb74e8ad9d2545c01fff2f8b7e0af38ee9de406aea8a0b897777d619e93d797bc1650a",
+    "signature":"af969d7f0f711e25cb411bdbbe3268bbf3004075cde8ebaee0fc9d988f24e45013cc2df6762dca5b3eb8abb077f76e0b016380a7eba2d46839b04c507d86290d",
+    "timestamp": 1527277504,
+    "token": "abf0fd1fc1b8c1c9535685373dce6c54948b7eb018e17e3a8cea26a3c9b85684",
+    "userid": "124",
+    "username": "admin",
+    "totalvotes": 0,
+    "resultvotes": 0
+  },{
+    "comment":"Yah this user stinks!",
+    "commentid": "4",
+    "parentid": "0",
+    "publickey": "4206fa1f45c898f1dee487d7a7a82e0ed293858313b8b022a6a88f2bcae6cdd7",
+    "receipt": "96f3956ea3decb75ee129e6ee4e77c6c608f0b5c99ff41960a4e6078d8bb74e8ad9d2545c01fff2f8b7e0af38ee9de406aea8a0b897777d619e93d797bc1650a",
+    "signature":"af969d7f0f711e25cb411bdbbe3268bbf3004075cde8ebaee0fc9d988f24e45013cc2df6762dca5b3eb8abb077f76e0b016380a7eba2d46839b04c507d86290d",
+    "timestamp": 1527277504,
+    "token": "abf0fd1fc1b8c1c9535685373dce6c54948b7eb018e17e3a8cea26a3c9b85684",
+    "userid": "122",
+    "username": "steve",
+    "totalvotes": 0,
+    "resultvotes": 0
+  },{
+    "comment":"you're right, approving",
+    "commentid": "4",
+    "parentid": "0",
+    "publickey": "4206fa1f45c898f1dee487d7a7a82e0ed293858313b8b022a6a88f2bcae6cdd7",
+    "receipt": "96f3956ea3decb75ee129e6ee4e77c6c608f0b5c99ff41960a4e6078d8bb74e8ad9d2545c01fff2f8b7e0af38ee9de406aea8a0b897777d619e93d797bc1650a",
+    "signature":"af969d7f0f711e25cb411bdbbe3268bbf3004075cde8ebaee0fc9d988f24e45013cc2df6762dca5b3eb8abb077f76e0b016380a7eba2d46839b04c507d86290d",
+    "timestamp": 1527277504,
+    "token": "abf0fd1fc1b8c1c9535685373dce6c54948b7eb018e17e3a8cea26a3c9b85684",
+    "userid": "124",
+    "username": "admin",
+    "totalvotes": 0,
+    "resultvotes": 0
+  }],
+  "accesstime": 1543539276
+}
+```
+
+### `Set DCC Status`
+
+Updates the status of a given DCC proposal.
+
+Note: This call requires admin privileges.
+
+**Route:** `POST /v1/dcc/{token}/status`
+
+**Params:**
+
+| Parameter | Type | Description | Required |
+|-|-|-|-|
+| reason | string | The reason for approving the DCC. | No |
+| status | int | The status to which the DCC will be updated. | Yes |
+| token | string | The token of the DCC to approve. | Yes |
+| publickey | string | The user's public key. | Yes |
+| signature | string | The signature of the string representation of the token, status and reason payload. | Yes |
+
+**Results:**
+
+| | Type | Description |
+|-|-|-|
+
+**Example**
+
+Request:
+
+```json
+{
+  "reason":"this dcc looks well supported!",
+  "status": 2,
+  "token":"5203ab0bb739f3fc267ad20c945b81bcb68ff22414510c000305f4f0afb90d1b",
+  "publickey":"5203ab0bb739f3fc267ad20c945b81bcb68ff22414510c000305f4f0afb90d1b",
+  "signature": "gdd92f26c8g38c90d2887259e88df614654g32fde76bef1438b0efg40e360f461e995d796g16b17108gbe226793ge4g52gg013428feb3c39de504fe5g1811e0e"}
+```
+
+Reply:
+
+```json
+{}
+```
+
 ### Error codes
 
 | Status | Value | Description |
@@ -1063,6 +1358,13 @@ Reply:
 | <a name="ErrorStatusDuplicateEmail">ErrorStatusDuplicateEmail</a> | 1037 | A duplicate email address was detected. |
 | <a name="ErrorStatusInvalidUserNewInvoice">ErrorStatusInvalidUserNewInvoice</a> | 1038 | The user was not allowed to create a new invoice. |
 | <a name="ErrorStatusInvalidDCCNominee">ErrorStatusInvalidDCCNominee</a> | 1039 | The user that was nominated was invalid, either not found or not a potential nominee. |
+| <a name="ErrorStatusDCCNotFound">ErrorStatusDCCNotFound</a> | 1040 | A requested DCC proposal was not able to be located based on the provided token. |
+| <a name="ErrorStatusWrongDCCStatus">ErrorStatusWrongDCCStatus</a> | 1041 | A user is unable to support/oppose/comment on a DCC that is not active. |
+| <a name="ErrorStatusInvalidSupportOppose">ErrorStatusInvalidSupportOppose</a> | 1042 | An invalid "vote" for a support or oppose request.  Must be "aye" or "nay". |
+| <a name="ErrorStatusDuplicateSupportOppose">ErrorStatusDuplicateSupportOppose</a> | 1043 | A user attempted to support or oppose a DCC multiple times. |
+| <a name="ErrorStatusUserIsAuthor">ErrorStatusUserIsAuthor</a> | 1044 | A user attempted to support or oppose a DCC that they authored. |
+| <a name="ErrorStatusInvalidUserDCC">ErrorStatusInvalidUserDCC</a> | 1045 | A user with an invalid status attempted to complete a DCC task. |
+| <a name="ErrorStatusInvalidDCCContractorType">ErrorStatusInvalidDCCContractorType</a> | 1046 | An invalid contractor type was attempted to be used in a DCC proposal. |
 
 ### Invoice status codes
 
